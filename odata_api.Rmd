@@ -1,0 +1,111 @@
+---
+title: "Acceessing ODATA API"
+author: Stephen Sani
+output: html_notebook
+---
+**To access some WHO indicator data stored in GHO via the ODATA API**
+
+Load required packages
+
+```{r}
+library(readr)
+library(vroom)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)
+library(httr)
+library(jsonlite)
+```
+
+# Accessing indicators stored in GHO via the ODATA API
+A function to extract a list of indicators stored in GHO via the API
+```{r}
+query <- "Indicator"
+
+getSdgIndicators <- function(query){
+    base_url = "https://ghoapi.azureedge.net/api/"
+    response <- httr::GET(paste0(base_url, query))
+    cont <- httr::content(response, as="text")
+    data_list <- jsonlite::fromJSON(cont)
+    indicators <- do.call(cbind.data.frame, data_list$value)
+    indicators
+}
+
+indicators <- getSdgIndicators(query)
+
+indicators
+```
+
+We find the indicator code for a specific indicator, say the Prevalence of wasted children under 5 years of age
+```{r}
+all_wasted_indicators <- getSdgIndicators(
+    "Indicator?$filter=contains(IndicatorName,%20%27wasted%27)"
+) 
+
+wasted_indicators <- getSdgIndicators("Indicator") %>%
+    filter(IndicatorName == "Children aged <5 years wasted for age (%)") %>%
+    select(IndicatorCode)
+
+wasted_indicators
+```
+
+# Extracting some data
+A function to extract data for wasted children via the API.
+```{r}
+indicator_code <- "NUTRITION_564"
+getSdgIndicatorData <- function(indicator_code){
+    base_url = "https://ghoapi.azureedge.net/api/"
+    response = httr::GET(paste0(base_url, indicator_code))
+    cont = httr::content(response, as="text")
+    data_list = jsonlite::fromJSON(cont)
+    indicators = do.call(cbind.data.frame, data_list$value)
+    indicators
+}
+indicator_data = getSdgIndicatorData(indicator_code)
+
+indicator_data
+```
+
+
+We are interested in the data between 2010 and 2020
+```{r}
+data <- indicator_data %>%
+    filter(
+        TimeDim %in% c(2010 : 2020)
+    ) %>%
+    select(Id, TimeDim, ParentLocation, Dim1, NumericValue, DataSourceDim) %>%
+    arrange(TimeDim, ParentLocation, Dim1)
+
+data
+```
+
+# Summarizing the data
+We obtain the number of entries for each ParentLocation disaggregated by TimeDim 
+```{r}
+parent_location_entries <- data %>%
+    group_by(TimeDim, ParentLocation) %>%
+    summarise(Entries = n()) %>%
+    arrange(TimeDim, ParentLocation)
+
+parent_location_entries
+```
+
+# Visualizing the summary data
+Let us plot a line graph to show the trend of entries by ParentLocation over the years
+```{r}
+ggplot(
+    parent_location_entries, 
+    aes(x = TimeDim, y = Entries, group = ParentLocation, color = ParentLocation)
+)+
+    geom_line()+
+    labs(
+        title = "Number of Entries by TimeDim disaggregated by ParentLocation",
+        x = "TimeDim (Year)",
+        y = "Number of Entries",
+        color = "ParentLocation"
+    )
+```
+# Conclusion
+Although we are interested in the time period between 2010 to 20120, as of "`r Sys.Date()`", the current date of running this program, data only exist up until 2014 and 2015
+
+
